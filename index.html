@@ -1,179 +1,178 @@
 <!DOCTYPE html>
 <html lang="pl">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Tablica zadań</title>
-    <!-- React + ReactDOM -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Drag & Drop -->
-    <script src="https://unpkg.com/react-beautiful-dnd@13.1.0/dist/react-beautiful-dnd.min.js"></script>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-      body { margin: 0; font-family: sans-serif; }
-    </style>
-  </head>
-  <body class="bg-gray-100">
-    <div id="root"></div>
+<head>
+  <meta charset="UTF-8" />
+  <title>Tablica zadań</title>
+  <!-- React + ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Drag & Drop -->
+  <script src="https://unpkg.com/react-beautiful-dnd@13.1.0/dist/react-beautiful-dnd.min.js"></script>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+  </style>
+</head>
+<body class="bg-gray-100">
+  <div id="root"></div>
 
-    <!-- Twój app.js -->
-    <script type="module" src="js/app.js"></script>
+  <!-- Wczytanie app.js jako modułu -->
+  <script type="module" src="js/app.js"></script>
 
-    <script type="text/babel">
-      const { useState, useEffect } = React;
-      const { DragDropContext, Droppable, Draggable } = window.ReactBeautifulDnd;
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { DragDropContext, Droppable, Draggable } = window.ReactBeautifulDnd;
 
-      function TaskBoard() {
-        const [users, setUsers] = useState([
-          { id: "admin", name: "Administrator", isAdmin: true, showColumn: false },
-          { id: "artur", name: "Artur", isAdmin: false, showColumn: true },
-          { id: "mateusz", name: "Mateusz", isAdmin: false, showColumn: true },
-        ]);
+    function App() {
+      const [users, setUsers] = useState([
+        { id: "admin", name: "Administrator", isAdmin: true, showColumn: false },
+        { id: "artur", name: "Artur", isAdmin: false, showColumn: true },
+        { id: "mateusz", name: "Mateusz", isAdmin: false, showColumn: true },
+      ]);
 
-        const [tasks, setTasks] = useState({ unassigned: [], artur: [], mateusz: [], zrealizowane: [] });
-        const [currentUser, setCurrentUser] = useState(users[0]);
-        const [newTask, setNewTask] = useState({ name: "", description: "", date: "", priority: "Niski", link: "" });
-        const [showForm, setShowForm] = useState(false);
-        const [statusFilter, setStatusFilter] = useState("Wszystkie");
-        const [searchQuery, setSearchQuery] = useState("");
-        const [sortBy, setSortBy] = useState({});
-        const [newUserName, setNewUserName] = useState("");
-        const [newUserColumn, setNewUserColumn] = useState(true);
+      const [tasks, setTasks] = useState({ unassigned: [], artur: [], mateusz: [], zrealizowane: [] });
+      const [currentUser, setCurrentUser] = useState(users[0]);
+      const [newTask, setNewTask] = useState({ name: "", description: "", date: "", priority: "Niski", link: "" });
+      const [showForm, setShowForm] = useState(false);
+      const [statusFilter, setStatusFilter] = useState("Wszystkie");
+      const [searchQuery, setSearchQuery] = useState("");
+      const [sortBy, setSortBy] = useState({});
+      const [newUserName, setNewUserName] = useState("");
+      const [newUserColumn, setNewUserColumn] = useState(true);
 
-        const NETLIFY_FN = 'https://cheery-vacherin-08fb11.netlify.app/.netlify/functions/tasks';
+      const NETLIFY_FN = 'https://cheery-vacherin-08fb11.netlify.app/.netlify/functions/tasks';
 
-        // --- Pobieranie zadań z Netlify/Supabase ---
-        async function loadTasks() {
-          try {
-            const res = await fetch(NETLIFY_FN);
-            if (!res.ok) { console.error('Błąd GET'); return; }
-            const allTasks = await res.json();
-            const grouped = { unassigned: [], zrealizowane: [] };
-            users.forEach(u => { if(u.showColumn) grouped[u.id] = []; });
+      // --- Pobranie zadań z Netlify ---
+      async function loadTasks() {
+        try {
+          const res = await fetch(NETLIFY_FN);
+          if (!res.ok) { console.error('Błąd GET'); return; }
+          const allTasks = await res.json();
+          const grouped = { unassigned: [], zrealizowane: [] };
+          users.forEach(u => { if(u.showColumn) grouped[u.id] = []; });
 
-            allTasks.forEach(t => {
-              if(t.status === "Zrealizowany") grouped.zrealizowane.push(t);
-              else if(t.assignedTo && grouped[t.assignedTo]) grouped[t.assignedTo].push(t);
-              else grouped.unassigned.push(t);
-            });
-            setTasks(grouped);
-          } catch(e) { console.error(e); }
-        }
-
-        // --- Dodanie zadania przez Netlify/Supabase ---
-        async function handleAddTask() {
-          if (!newTask.name.trim()) return;
-          const taskToAdd = {
-            text: newTask.name,
-            description: newTask.description,
-            date: newTask.date,
-            priority: newTask.priority,
-            link: newTask.link,
-            assignedTo: "", // początkowo nieprzypisane
-            status: "Nowy",
-            createdBy: currentUser.name,
-            createdAt: new Date().toISOString()
-          };
-          try {
-            const res = await fetch(NETLIFY_FN, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(taskToAdd)
-            });
-            if(!res.ok) { const err = await res.text(); console.error(err); return; }
-            setNewTask({ name: "", description: "", date: "", priority: "Niski", link: "" });
-            setShowForm(false);
-            await loadTasks();
-          } catch(e) { console.error(e); }
-        }
-
-        useEffect(() => { loadTasks(); }, []);
-
-        const handleStatusChange = (colId, taskId, newStatus) => {
-          const updatedTasks = { ...tasks };
-          let movedTask = null;
-          Object.keys(updatedTasks).forEach(key => {
-            updatedTasks[key] = updatedTasks[key].map(task => {
-              if(task.id === taskId){
-                const t = { ...task, status: newStatus };
-                movedTask = t;
-                return t;
-              }
-              return task;
-            }).filter(task => task.id !== taskId);
+          allTasks.forEach(t => {
+            if(t.status === "Zrealizowany") grouped.zrealizowane.push(t);
+            else if(t.assignedTo && grouped[t.assignedTo]) grouped[t.assignedTo].push(t);
+            else grouped.unassigned.push(t);
           });
-          if(movedTask.status === "Zrealizowany") updatedTasks.zrealizowane.push(movedTask);
-          else updatedTasks[colId].push(movedTask);
-          setTasks(updatedTasks);
+          setTasks(grouped);
+        } catch(e) { console.error(e); }
+      }
+
+      // --- Dodanie zadania ---
+      async function handleAddTask() {
+        if (!newTask.name.trim()) return;
+        const taskToAdd = {
+          text: newTask.name,
+          description: newTask.description,
+          date: newTask.date,
+          priority: newTask.priority,
+          link: newTask.link,
+          assignedTo: "",
+          status: "Nowy",
+          createdBy: currentUser.name,
+          createdAt: new Date().toISOString()
         };
-
-        const getStatusColor = (status) => {
-          switch (status) {
-            case "Nowy": return "bg-gray-300 text-gray-800";
-            case "W trakcie realizacji": return "bg-yellow-300 text-yellow-900";
-            case "Wstrzymany": return "bg-red-300 text-red-900";
-            case "Zrealizowany": return "bg-green-300 text-green-900";
-            default: return "bg-gray-200 text-gray-800";
-          }
-        };
-
-        const columns = [
-          { id: "unassigned", title: "Nieprzypisane" },
-          ...users.filter(u => u.showColumn).map(u => ({ id: u.id, title: u.name })),
-          { id: "zrealizowane", title: "Zrealizowane" },
-        ];
-
-        const onDragEnd = (result) => {
-          const { source, destination } = result;
-          if(!destination) return;
-          if(source.droppableId === destination.droppableId && source.index === destination.index) return;
-
-          const sourceTasks = Array.from(tasks[source.droppableId]);
-          const [removed] = sourceTasks.splice(source.index, 1);
-
-          const destTasks = Array.from(tasks[destination.droppableId]);
-          destTasks.splice(destination.index, 0, removed);
-
-          setTasks({
-            ...tasks,
-            [source.droppableId]: sourceTasks,
-            [destination.droppableId]: destTasks,
+        try {
+          const res = await fetch(NETLIFY_FN, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(taskToAdd)
           });
-        };
+          if(!res.ok) { const err = await res.text(); console.error(err); return; }
+          setNewTask({ name: "", description: "", date: "", priority: "Niski", link: "" });
+          setShowForm(false);
+          await loadTasks();
+        } catch(e) { console.error(e); }
+      }
 
-        return (
-          <div className="flex flex-col gap-6 p-6 bg-gray-100 min-h-screen">
-            <div className="bg-white shadow-md rounded-2xl p-4 flex items-center gap-4">
-              <label className="font-semibold">Zalogowany jako:</label>
-              <select value={currentUser.id} onChange={(e) => setCurrentUser(users.find(u => u.id === e.target.value))} className="border rounded-xl p-2">
-                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </div>
+      useEffect(() => { loadTasks(); }, []);
 
-            <div className="bg-white shadow-md rounded-2xl p-4">
-              <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-green-500 text-white rounded-xl shadow hover:bg-green-600">
-                {showForm ? "Anuluj" : "Dodaj nowe zadanie"}
-              </button>
+      const handleStatusChange = (colId, taskId, newStatus) => {
+        const updatedTasks = { ...tasks };
+        let movedTask = null;
+        Object.keys(updatedTasks).forEach(key => {
+          updatedTasks[key] = updatedTasks[key].map(task => {
+            if(task.id === taskId){
+              const t = { ...task, status: newStatus };
+              movedTask = t;
+              return t;
+            }
+            return task;
+          }).filter(task => task.id !== taskId);
+        });
+        if(movedTask.status === "Zrealizowany") updatedTasks.zrealizowane.push(movedTask);
+        else updatedTasks[colId].push(movedTask);
+        setTasks(updatedTasks);
+      };
 
-              {showForm && (
-                <div className="mt-4">
-                  <h2 className="text-lg font-bold mb-4">Nowe zadanie</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <input type="text" placeholder="Nazwa" value={newTask.name} onChange={(e) => setNewTask({ ...newTask, name: e.target.value })} className="border rounded-xl p-2" />
-                    <input type="date" value={newTask.date} onChange={(e) => setNewTask({ ...newTask, date: e.target.value })} className="border rounded-xl p-2" />
-                    <textarea placeholder="Opis" value={newTask.description} onChange={(e) => setNewTask({ ...newTask, description: e.target.value })} className="border rounded-xl p-2 col-span-2" />
-                    <select value={newTask.priority} onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })} className="border rounded-xl p-2">
-                      <option>Niski</option>
-                      <option>Średni</option>
-                      <option>Wysoki</option>
-                    </select>
-                    <input type="url" placeholder="Link" value={newTask.link} onChange={(e) => setNewTask({ ...newTask, link: e.target.value })} className="border rounded-xl p-2" />
-                  </div>
-                  <button onClick={handleAddTask} className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-xl shadow hover:bg-blue-600">Zapisz zadanie</button>
+      const getStatusColor = (status) => {
+        switch (status) {
+          case "Nowy": return "bg-gray-300 text-gray-800";
+          case "W trakcie realizacji": return "bg-yellow-300 text-yellow-900";
+          case "Wstrzymany": return "bg-red-300 text-red-900";
+          case "Zrealizowany": return "bg-green-300 text-green-900";
+          default: return "bg-gray-200 text-gray-800";
+        }
+      };
+
+      const columns = [
+        { id: "unassigned", title: "Nieprzypisane" },
+        ...users.filter(u => u.showColumn).map(u => ({ id: u.id, title: u.name })),
+        { id: "zrealizowane", title: "Zrealizowane" },
+      ];
+
+      const onDragEnd = (result) => {
+        const { source, destination } = result;
+        if(!destination) return;
+        if(source.droppableId === destination.droppableId && source.index === destination.index) return;
+
+        const sourceTasks = Array.from(tasks[source.droppableId]);
+        const [removed] = sourceTasks.splice(source.index, 1);
+
+        const destTasks = Array.from(tasks[destination.droppableId]);
+        destTasks.splice(destination.index, 0, removed);
+
+        setTasks({
+          ...tasks,
+          [source.droppableId]: sourceTasks,
+          [destination.droppableId]: destTasks,
+        });
+      };
+
+      return (
+        <div className="flex flex-col gap-6 p-6 bg-gray-100 min-h-screen">
+          <div className="bg-white shadow-md rounded-2xl p-4 flex items-center gap-4">
+            <label className="font-semibold">Zalogowany jako:</label>
+            <select value={currentUser.id} onChange={(e) => setCurrentUser(users.find(u => u.id === e.target.value))} className="border rounded-xl p-2">
+              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </div>
+
+          <div className="bg-white shadow-md rounded-2xl p-4">
+            <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-green-500 text-white rounded-xl shadow hover:bg-green-600">
+              {showForm ? "Anuluj" : "Dodaj nowe zadanie"}
+            </button>
+
+            {showForm && (
+              <div className="mt-4">
+                <h2 className="text-lg font-bold mb-4">Nowe zadanie</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <input type="text" placeholder="Nazwa" value={newTask.name} onChange={(e) => setNewTask({ ...newTask, name: e.target.value })} className="border rounded-xl p-2" />
+                  <input type="date" value={newTask.date} onChange={(e) => setNewTask({ ...newTask, date: e.target.value })} className="border rounded-xl p-2" />
+                  <textarea placeholder="Opis" value={newTask.description} onChange={(e) => setNewTask({ ...newTask, description: e.target.value })} className="border rounded-xl p-2 col-span-2" />
+                  <select value={newTask.priority} onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })} className="border rounded-xl p-2">
+                    <option>Niski</option>
+                    <option>Średni</option>
+                    <option>Wysoki</option>
+                  </select>
+                  <input type="url" placeholder="Link" value={newTask.link} onChange={(e) => setNewTask({ ...newTask, link: e.target.value })} className="border rounded-xl p-2" />
                 </div>
-              )}
+                <button onClick={handleAddTask} className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-xl shadow hover:bg-blue-600">Zapisz zadanie</button>
+              </div>
             </div>
 
             <DragDropContext onDragEnd={onDragEnd}>
@@ -186,4 +185,38 @@
                         {tasks[col.id].map((task, index) => (
                           <Draggable key={task.id} draggableId={task.id} index={index}>
                             {(provided) => (
-                              <div
+                              <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} className="p-3 mb-3 bg-blue-100 rounded-xl shadow-sm cursor-move">
+                                <p className="font-bold">{task.text}</p>
+                                <p className="text-sm">{task.description}</p>
+                                <p className="text-xs">📅 {task.date} | ⬆️ {task.priority}</p>
+                                {task.link && <a href={task.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-xs">🔗 Link</a>}
+                                <p className="text-[10px] text-gray-500 mt-1">Utworzone przez: {task.createdBy} o {task.createdAt}</p>
+                                <div className="mt-2">
+                                  <label className="text-xs font-semibold mr-2">Status:</label>
+                                  <select value={task.status} onChange={(e) => handleStatusChange(col.id, task.id, e.target.value)} className={`border rounded-xl p-1 text-xs ${getStatusColor(task.status)}`}>
+                                    <option>Nowy</option>
+                                    <option>W trakcie realizacji</option>
+                                    <option>Wstrzymany</option>
+                                    <option>Zrealizowany</option>
+                                  </select>
+                                </div>
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
+                ))}
+              </div>
+            </DragDropContext>
+          </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
