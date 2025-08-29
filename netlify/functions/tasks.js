@@ -1,7 +1,7 @@
 // netlify/functions/tasks.js
 export const handler = async (event) => {
-  const SUPABASE_URL = process.env.SUPABASE_URL; // np. https://xyz.supabase.co
-  const SUPABASE_KEY = process.env.SUPABASE_KEY; // service_role key (trzymaj w Netlify env)
+  const SUPABASE_URL = process.env.SUPABASE_URL; 
+  const SUPABASE_KEY = process.env.SUPABASE_KEY; 
 
   const CORS = {
     'Access-Control-Allow-Origin': '*', // możesz tutaj podać konkretną domenę
