@@ -1,53 +1,72 @@
 // netlify/functions/tasks.js
-export const handler = async (event) => {
-  const SUPABASE_URL = process.env.SUPABASE_URL; 
-  const SUPABASE_KEY = process.env.SUPABASE_KEY; 
+import { createClient } from '@supabase/supabase-js';
 
-  const CORS = {
-    'Access-Control-Allow-Origin': '*', // możesz tutaj podać konkretną domenę
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  };
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers: CORS, body: '' };
-  }
+export async function handler(event, context) {
+  // GET – pobierz wszystkie zadania
+  if (event.httpMethod === 'GET') {
+    try {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('createdAt', { ascending: false });
 
-  try {
-    if (event.httpMethod === 'GET') {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/tasks?select=*&order=created_at.asc`, {
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-      });
-      if (!res.ok) throw new Error(`Supabase GET failed: ${res.status}`);
-      const tasks = await res.json();
-      return { statusCode: 200, headers: CORS, body: JSON.stringify(tasks) };
-    }
-
-    if (event.httpMethod === 'POST') {
-      const payload = event.body ? JSON.parse(event.body) : {};
-      if (!payload.text) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Missing text' }) };
-
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/tasks`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-          Prefer: 'return=representation'
-        },
-        body: JSON.stringify([{ text: payload.text, done: payload.done ?? false }]),
-      });
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(`Supabase POST failed: ${res.status} ${txt}`);
+      if (error) {
+        return {
+          statusCode: 500,
+          body: JSON.stringify({ error: error.message })
+        };
       }
-      const inserted = await res.json();
-      return { statusCode: 201, headers: CORS, body: JSON.stringify(inserted[0]) };
+      return {
+        statusCode: 200,
+        body: JSON.stringify(data)
+      };
+    } catch (err) {
+      return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
     }
-
-    return { statusCode: 405, headers: CORS, body: 'Method Not Allowed' };
-  } catch (err) {
-    console.error(err);
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: err.message }) };
   }
-};
+
+  // POST – dodaj nowe zadanie
+  if (event.httpMethod === 'POST') {
+    try {
+      const body = JSON.parse(event.body);
+      const newTask = {
+        text: body.text,
+        description: body.description || '',
+        date: body.date || null,
+        priority: body.priority || 'Niski',
+        link: body.link || '',
+        assignedTo: body.assignedTo || null,
+        status: body.status || 'Nowy',
+        createdBy: body.createdBy || 'Anonim',
+        createdAt: body.createdAt || new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert([newTask])
+        .select()
+        .single();
+
+      if (error) {
+        return {
+          statusCode: 500,
+          body: JSON.stringify({ error: error.message })
+        };
+      }
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify(data)
+      };
+    } catch (err) {
+      return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    }
+  }
+
+  return { statusCode: 405, body: 'Method Not Allowed' };
+}

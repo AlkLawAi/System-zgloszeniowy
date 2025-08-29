@@ -18,9 +18,6 @@
 <body class="bg-gray-100">
   <div id="root"></div>
 
-  <!-- Wczytanie app.js jako modułu -->
-  <script type="module" src="js/app.js"></script>
-
   <script type="text/babel">
     const { useState, useEffect } = React;
     const { DragDropContext, Droppable, Draggable } = window.ReactBeautifulDnd;
@@ -36,15 +33,10 @@
       const [currentUser, setCurrentUser] = useState(users[0]);
       const [newTask, setNewTask] = useState({ name: "", description: "", date: "", priority: "Niski", link: "" });
       const [showForm, setShowForm] = useState(false);
-      const [statusFilter, setStatusFilter] = useState("Wszystkie");
-      const [searchQuery, setSearchQuery] = useState("");
-      const [sortBy, setSortBy] = useState({});
-      const [newUserName, setNewUserName] = useState("");
-      const [newUserColumn, setNewUserColumn] = useState(true);
 
-      const NETLIFY_FN = 'https://cheery-vacherin-08fb11.netlify.app/.netlify/functions/tasks';
+      const NETLIFY_FN = 'https://alktech.netlify.app/.netlify/functions/tasks';
 
-      // --- Pobranie zadań z Netlify ---
+      // --- Pobranie zadań z Netlify/Supabase ---
       async function loadTasks() {
         try {
           const res = await fetch(NETLIFY_FN);
@@ -62,7 +54,7 @@
         } catch(e) { console.error(e); }
       }
 
-      // --- Dodanie zadania ---
+      // --- Dodanie nowego zadania ---
       async function handleAddTask() {
         if (!newTask.name.trim()) return;
         const taskToAdd = {
@@ -173,7 +165,7 @@
                 </div>
                 <button onClick={handleAddTask} className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-xl shadow hover:bg-blue-600">Zapisz zadanie</button>
               </div>
-            </div>
+            )}
 
             <DragDropContext onDragEnd={onDragEnd}>
               <div className="flex gap-6 flex-wrap">
