@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <title>Tablica zadań</title>
-    <!-- React + ReactDOM z CDN -->
+    <!-- React + ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -18,36 +18,22 @@
   <body class="bg-gray-100">
     <div id="root"></div>
 
+    <!-- Twój app.js -->
+    <script type="module" src="js/app.js"></script>
+
     <script type="text/babel">
       const { useState, useEffect } = React;
       const { DragDropContext, Droppable, Draggable } = window.ReactBeautifulDnd;
 
-      // --- Twój komponent TaskBoard ---
       function TaskBoard() {
-        const [users, setUsers] = useState(() => {
-          const saved = localStorage.getItem("users");
-          return saved ? JSON.parse(saved) : [
-            { id: "admin", name: "Administrator", isAdmin: true, showColumn: false },
-            { id: "artur", name: "Artur", isAdmin: false, showColumn: true },
-            { id: "mateusz", name: "Mateusz", isAdmin: false, showColumn: true },
-          ];
-        });
+        const [users, setUsers] = useState([
+          { id: "admin", name: "Administrator", isAdmin: true, showColumn: false },
+          { id: "artur", name: "Artur", isAdmin: false, showColumn: true },
+          { id: "mateusz", name: "Mateusz", isAdmin: false, showColumn: true },
+        ]);
 
-        const [tasks, setTasks] = useState(() => {
-          const saved = localStorage.getItem("tasks");
-          return saved ? JSON.parse(saved) : {
-            unassigned: [],
-            artur: [],
-            mateusz: [],
-            zrealizowane: [],
-          };
-        });
-
-        const [currentUser, setCurrentUser] = useState(() => {
-          const saved = localStorage.getItem("currentUser");
-          return saved ? JSON.parse(saved) : users[0];
-        });
-
+        const [tasks, setTasks] = useState({ unassigned: [], artur: [], mateusz: [], zrealizowane: [] });
+        const [currentUser, setCurrentUser] = useState(users[0]);
         const [newTask, setNewTask] = useState({ name: "", description: "", date: "", priority: "Niski", link: "" });
         const [showForm, setShowForm] = useState(false);
         const [statusFilter, setStatusFilter] = useState("Wszystkie");
@@ -56,64 +42,70 @@
         const [newUserName, setNewUserName] = useState("");
         const [newUserColumn, setNewUserColumn] = useState(true);
 
-        useEffect(() => { localStorage.setItem("tasks", JSON.stringify(tasks)); }, [tasks]);
-        useEffect(() => { localStorage.setItem("users", JSON.stringify(users)); }, [users]);
-        useEffect(() => { localStorage.setItem("currentUser", JSON.stringify(currentUser)); }, [currentUser]);
+        const NETLIFY_FN = 'https://cheery-vacherin-08fb11.netlify.app/.netlify/functions/tasks';
 
-        const handleAddTask = () => {
+        // --- Pobieranie zadań z Netlify/Supabase ---
+        async function loadTasks() {
+          try {
+            const res = await fetch(NETLIFY_FN);
+            if (!res.ok) { console.error('Błąd GET'); return; }
+            const allTasks = await res.json();
+            const grouped = { unassigned: [], zrealizowane: [] };
+            users.forEach(u => { if(u.showColumn) grouped[u.id] = []; });
+
+            allTasks.forEach(t => {
+              if(t.status === "Zrealizowany") grouped.zrealizowane.push(t);
+              else if(t.assignedTo && grouped[t.assignedTo]) grouped[t.assignedTo].push(t);
+              else grouped.unassigned.push(t);
+            });
+            setTasks(grouped);
+          } catch(e) { console.error(e); }
+        }
+
+        // --- Dodanie zadania przez Netlify/Supabase ---
+        async function handleAddTask() {
           if (!newTask.name.trim()) return;
-          const task = {
-            id: Date.now().toString(),
-            ...newTask,
-            createdBy: currentUser.name,
-            createdAt: new Date().toLocaleString(),
+          const taskToAdd = {
+            text: newTask.name,
+            description: newTask.description,
+            date: newTask.date,
+            priority: newTask.priority,
+            link: newTask.link,
+            assignedTo: "", // początkowo nieprzypisane
             status: "Nowy",
-            holdUntil: "",
+            createdBy: currentUser.name,
+            createdAt: new Date().toISOString()
           };
-          setTasks({ ...tasks, unassigned: [...tasks.unassigned, task] });
-          setNewTask({ name: "", description: "", date: "", priority: "Niski", link: "" });
-          setShowForm(false);
-        };
+          try {
+            const res = await fetch(NETLIFY_FN, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(taskToAdd)
+            });
+            if(!res.ok) { const err = await res.text(); console.error(err); return; }
+            setNewTask({ name: "", description: "", date: "", priority: "Niski", link: "" });
+            setShowForm(false);
+            await loadTasks();
+          } catch(e) { console.error(e); }
+        }
 
-        const handleAddUser = () => {
-          if (!newUserName.trim()) return;
-          const id = newUserName.toLowerCase().replace(/\s+/g, "_");
-          const newUser = { id, name: newUserName, isAdmin: false, showColumn: newUserColumn };
-          setUsers([...users, newUser]);
-          if (newUserColumn) setTasks({ ...tasks, [id]: [] });
-          setNewUserName("");
-          setNewUserColumn(true);
-        };
+        useEffect(() => { loadTasks(); }, []);
 
         const handleStatusChange = (colId, taskId, newStatus) => {
           const updatedTasks = { ...tasks };
           let movedTask = null;
-
           Object.keys(updatedTasks).forEach(key => {
             updatedTasks[key] = updatedTasks[key].map(task => {
-              if (task.id === taskId) {
-                const newTask = { ...task, status: newStatus, holdUntil: newStatus !== "Wstrzymany do" ? "" : task.holdUntil };
-                movedTask = newTask;
-                return newTask;
+              if(task.id === taskId){
+                const t = { ...task, status: newStatus };
+                movedTask = t;
+                return t;
               }
               return task;
             }).filter(task => task.id !== taskId);
           });
-
-          if (movedTask.status === "Zrealizowany") {
-            updatedTasks["zrealizowane"] = [...updatedTasks["zrealizowane"], movedTask];
-          } else {
-            updatedTasks[colId] = [...(updatedTasks[colId] || []), movedTask];
-          }
-
-          setTasks(updatedTasks);
-        };
-
-        const handleHoldDateChange = (colId, taskId, date) => {
-          const updatedTasks = { ...tasks };
-          updatedTasks[colId] = updatedTasks[colId].map(task =>
-            task.id === taskId ? { ...task, holdUntil: date } : task
-          );
+          if(movedTask.status === "Zrealizowany") updatedTasks.zrealizowane.push(movedTask);
+          else updatedTasks[colId].push(movedTask);
           setTasks(updatedTasks);
         };
 
@@ -122,7 +114,6 @@
             case "Nowy": return "bg-gray-300 text-gray-800";
             case "W trakcie realizacji": return "bg-yellow-300 text-yellow-900";
             case "Wstrzymany": return "bg-red-300 text-red-900";
-            case "Wstrzymany do": return "bg-orange-300 text-orange-900";
             case "Zrealizowany": return "bg-green-300 text-green-900";
             default: return "bg-gray-200 text-gray-800";
           }
@@ -134,25 +125,10 @@
           { id: "zrealizowane", title: "Zrealizowane" },
         ];
 
-        const sortTasks = (tasksArray, colId) => {
-          const sortValue = sortBy[colId];
-          if (!sortValue) return tasksArray;
-          const sorted = [...tasksArray];
-          switch (sortValue) {
-            case "data": sorted.sort((a, b) => new Date(a.date) - new Date(b.date)); break;
-            case "priorytet":
-              const priorityOrder = { Niski: 1, Średni: 2, Wysoki: 3 };
-              sorted.sort((a, b) => priorityOrder[b.priority] - priorityOrder[a.priority]); break;
-            case "nazwa": sorted.sort((a, b) => a.name.localeCompare(b.name)); break;
-            default: break;
-          }
-          return sorted;
-        };
-
         const onDragEnd = (result) => {
           const { source, destination } = result;
-          if (!destination) return;
-          if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+          if(!destination) return;
+          if(source.droppableId === destination.droppableId && source.index === destination.index) return;
 
           const sourceTasks = Array.from(tasks[source.droppableId]);
           const [removed] = sourceTasks.splice(source.index, 1);
@@ -198,100 +174,16 @@
                   <button onClick={handleAddTask} className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-xl shadow hover:bg-blue-600">Zapisz zadanie</button>
                 </div>
               )}
-
-              {currentUser.isAdmin && (
-                <div className="mt-6">
-                  <h2 className="text-lg font-bold mb-2">Dodaj użytkownika</h2>
-                  <div className="flex gap-2 items-center">
-                    <input type="text" placeholder="Imię użytkownika" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} className="border rounded-xl p-2 flex-1" />
-                    <label className="text-sm flex items-center gap-1">
-                      <input type="checkbox" checked={newUserColumn} onChange={(e) => setNewUserColumn(e.target.checked)} />
-                      Utwórz kolumnę dla użytkownika
-                    </label>
-                    <button onClick={handleAddUser} className="px-4 py-2 bg-blue-500 text-white rounded-xl">Dodaj</button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-white shadow-md rounded-2xl p-4 flex items-center gap-4 flex-wrap">
-              <label className="font-semibold">Filtruj po statusie:</label>
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border rounded-xl p-2">
-                <option>Wszystkie</option>
-                <option>Nowy</option>
-                <option>W trakcie realizacji</option>
-                <option>Wstrzymany</option>
-                <option>Wstrzymany do</option>
-                <option>Zrealizowany</option>
-              </select>
-              <input type="text" placeholder="Szukaj po nazwie lub opisie..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="border rounded-xl p-2 flex-1" />
             </div>
 
             <DragDropContext onDragEnd={onDragEnd}>
               <div className="flex gap-6 flex-wrap">
-                {columns.map((col) => (
+                {columns.map(col => (
                   <Droppable key={col.id} droppableId={col.id}>
                     {(provided) => (
                       <div ref={provided.innerRef} {...provided.droppableProps} className="bg-white shadow-md rounded-2xl p-4 w-[320px] min-h-[400px]">
-                        <div className="flex justify-between items-center mb-4">
-                          <h2 className="text-xl font-bold">{col.title}</h2>
-                          <select value={sortBy[col.id] || ""} onChange={(e) => setSortBy({ ...sortBy, [col.id]: e.target.value })} className="border rounded-xl p-1 text-xs">
-                            <option value="">Sortuj</option>
-                            <option value="data">Data</option>
-                            <option value="priorytet">Priorytet</option>
-                            <option value="nazwa">Nazwa</option>
-                          </select>
-                        </div>
-                        {sortTasks(
-                          tasks[col.id].filter(task => statusFilter === "Wszystkie" || task.status === statusFilter)
-                                         .filter(task => task.name.toLowerCase().includes(searchQuery.toLowerCase()) || task.description.toLowerCase().includes(searchQuery.toLowerCase())),
-                          col.id
-                        ).map((task, index) => (
+                        <h2 className="text-xl font-bold mb-4">{col.title}</h2>
+                        {tasks[col.id].map((task, index) => (
                           <Draggable key={task.id} draggableId={task.id} index={index}>
                             {(provided) => (
-                              <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} className="p-3 mb-3 bg-blue-100 rounded-xl shadow-sm cursor-move">
-                                <p className="font-bold">{task.name}</p>
-                                <p className="text-sm">{task.description}</p>
-                                <p className="text-xs">📅 {task.date} | ⬆️ {task.priority}</p>
-                                {task.link && <a href={task.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-xs">🔗 Link</a>}
-                                <p className="text-[10px] text-gray-500 mt-1">Utworzone przez: {task.createdBy} o {task.createdAt}</p>
-                                <div className="mt-2">
-                                  <label className="text-xs font-semibold mr-2">Status:</label>
-                                  <select value={task.status} onChange={(e) => handleStatusChange(col.id, task.id, e.target.value)} className={`border rounded-xl p-1 text-xs ${getStatusColor(task.status)}`}>
-                                    <option>Nowy</option>
-                                    <option>W trakcie realizacji</option>
-                                    <option>Wstrzymany</option>
-                                    <option>Wstrzymany do</option>
-                                    <option>Zrealizowany</option>
-                                  </select>
-                                </div>
-                                {task.status === "Wstrzymany do" && (
-                                  <div className="mt-2">
-                                    <input type="date" value={task.holdUntil} onChange={(e) => handleHoldDateChange(col.id, task.id, e.target.value)} className="border rounded-xl p-1 text-xs" />
-                                    {task.holdUntil && <p className="text-xs text-red-600 mt-1">⏸ Wstrzymany do: {task.holdUntil}</p>}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </Draggable>
-                        ))}
-                        {provided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
-                ))}
-              </div>
-            </DragDropContext>
-          </div>
-        );
-      }
-
-      function App() {
-        return <TaskBoard />;
-      }
-
-      const root = ReactDOM.createRoot(document.getElementById("root"));
-      root.render(<App />);
-    </script>
-  </body>
-</html>
+                              <div
