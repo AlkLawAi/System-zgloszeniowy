@@ -1,4 +1,4 @@
-const NETLIFY_FN = 'https://cheery-vacherin-08fb11.netlify.app//.netlify/functions/tasks';
+const NETLIFY_FN = 'https://cheery-vacherin-08fb11.netlify.app/.netlify/functions/tasks';
 
 // Pobranie listy zadań i render
 async function loadTasks() {
@@ -33,3 +33,4 @@ document.querySelector('#addBtn').addEventListener('click', () => {
   addTask(val);
 });
 window.addEventListener('load', loadTasks);
+
