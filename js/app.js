@@ -1,5 +1,5 @@
 // URL do funkcji Netlify (uwaga: pojedynczy slash)
-const NETLIFY_FN = 'https://cheery-vacherin-08fb11.netlify.app/.netlify/functions/tasks';
+const NETLIFY_FN = 'https://alktech.netlify.app/.netlify/functions/tasks';
 
 // Renderowanie zadań w DOM
 function renderTasks(tasks) {
